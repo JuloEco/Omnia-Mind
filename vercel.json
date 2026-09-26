@@ -6,8 +6,7 @@
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "15mb",
-        "runtime": "python3.11",
-        "installCommand": "pip install -r requirements.txt --target ./venv/lib/python3.11/site-packages"
+        "runtime": "python3.11"
       }
     }
   ],
