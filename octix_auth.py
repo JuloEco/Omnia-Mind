@@ -20,10 +20,6 @@ from flask import session, redirect, url_for, request, flash, abort
 
 from models import db, User
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 OCTIX_URL = os.environ.get("OCTIX_URL", "http://localhost:5050")
 OCTIX_PORTAL_URL = os.environ.get("OCTIX_PORTAL_URL", "http://localhost:5051")
 OCTIX_APP_NAME = "OmniaMind"
