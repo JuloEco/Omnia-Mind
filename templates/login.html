@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Connexion — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="min-h-[80vh] flex items-center justify-center">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow floaty-icon">
+        <i data-lucide="brain-circuit" class="w-8 h-8 text-white"></i>
+      </div>
+      <h1 class="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-omnia-orange to-omnia-red">{{ app_name }}</h1>
+      <p class="text-slate-400 mt-2 text-sm">Réviser n'a jamais été aussi gratifiant.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('login') }}" class="glass rounded-2xl p-6 sm:p-8 space-y-5 shadow-glow">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Identifiant Octix</label>
+        <input type="text" name="username" required autofocus
+               class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-omnia-orange/60 transition"
+               placeholder="ton pseudo Octix">
+      </div>
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Mot de passe</label>
+        <input type="password" name="password" required
+               class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-omnia-orange/60 transition"
+               placeholder="••••••••">
+      </div>
+      <button type="submit"
+              class="w-full py-3 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-[1.02] transition">
+        Se connecter
+      </button>
+      <p class="text-center text-xs text-slate-400 pt-1">
+        Pas encore de compte ?
+        <a href="{{ octix_portal_url }}" target="_blank" rel="noopener" class="text-omnia-orange font-semibold hover:underline">Crée ton identifiant Octix ↗</a>
+      </p>
+    </form>
+
+    <p class="text-center text-[11px] text-slate-500 mt-6">
+      {{ app_name }} fait partie de l'écosystème Octix. Ton compte et ton mot de passe sont gérés
+      exclusivement par le portail Octix — {{ app_name }} ne les stocke jamais.
+    </p>
+
+    {% if demo_enabled %}
+    <div class="glass rounded-xl px-4 py-3 mt-4 text-center text-xs text-slate-300">
+      <i data-lucide="flask-conical" class="w-4 h-4 inline -mt-0.5 text-omnia-orange"></i> Service Octix pas encore branché ? Teste avec le compte de démo :
+      <span class="font-mono font-bold text-omnia-orange">{{ demo_username }}</span> /
+      <span class="font-mono font-bold text-omnia-orange">{{ demo_password }}</span>
+      <br class="hidden sm:block">
+      <span class="text-slate-500">(ne passe pas par Octix — désactivable via <code class="font-mono">OMNIAMIND_DEMO=0</code>)</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

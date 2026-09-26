@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Dictée — {{ deck.title }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="text-sm text-slate-400 hover:text-white transition">← {{ deck.title }}</a>
+  <div class="flex items-center gap-3">
+    <span id="combo-badge" class="hidden items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-omnia-orange to-omnia-red text-xs font-bold"><i data-lucide="flame" class="w-3.5 h-3.5"></i>Combo x<span id="combo-nb">1</span></span>
+    <div class="text-sm font-semibold" id="counter">— / —</div>
+  </div>
+</div>
+
+<div class="h-2 rounded-full bg-white/10 overflow-hidden mb-10">
+  <div id="progress-bar" class="progress-fill h-full rounded-full bg-omnia-red" style="width:0%"></div>
+</div>
+
+<div id="dictee-zone" class="hidden max-w-lg mx-auto text-center">
+  <p id="def-hint" class="text-slate-400 text-sm mb-6"></p>
+
+  <button onclick="speakTerm()" class="btn-ripple w-20 h-20 rounded-full bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow flex items-center justify-center mx-auto mb-6 hover:scale-105 transition">
+    <i data-lucide="volume-2" class="w-8 h-8 text-white"></i>
+  </button>
+
+  <form id="answer-form" onsubmit="return checkAnswer(event)" class="space-y-4">
+    <input id="answer-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+           class="w-full text-center text-lg rounded-xl bg-white/5 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-omnia-orange/60 transition"
+           placeholder="Écris ce que tu entends...">
+    <div id="hint-line" class="text-2xl font-mono tracking-[0.3em] text-slate-500 min-h-[2rem]"></div>
+    <div class="flex gap-3 justify-center">
+      <button type="button" onclick="revealHint()" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition"><i data-lucide="lightbulb" class="w-4 h-4"></i>Indice</button>
+      <button type="submit" class="px-6 py-2.5 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-105 transition">Valider</button>
+    </div>
+  </form>
+  <p id="feedback" class="mt-4 text-sm font-semibold h-5"></p>
+</div>
+
+<div id="empty-zone" class="hidden glass rounded-2xl p-10 text-center">
+  <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/5 flex items-center justify-center text-slate-400"><i data-lucide="headphones" class="w-7 h-7"></i></div>
+  <p class="font-semibold">Ce deck n'a pas encore de carte.</p>
+</div>
+
+<div id="summary-modal" class="hidden fixed inset-0 z-[95] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="glass rounded-3xl p-8 max-w-sm w-full text-center shadow-glow">
+    <div id="finish-icon-wrap" class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow"><i id="finish-icon" data-lucide="headphones" class="w-8 h-8 text-white"></i></div>
+    <h2 class="text-xl font-extrabold mb-1">Dictée terminée !</h2>
+    <p class="text-4xl font-black my-4"><span id="score-rollup">0</span>%</p>
+    <p id="xp-line" class="text-sm text-omnia-orange font-bold mb-6"></p>
+    <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="block w-full py-3 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-105 transition">Retour au deck</a>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DECK_ID = {{ deck.id }};
+let cards = [];
+let idx = 0;
+let correctCount = 0;
+let revealedCount = 1;
+let combo = 0;
+
+function updateCombo(isCorrect) {
+  combo = isCorrect ? combo + 1 : 0;
+  const badge = document.getElementById("combo-badge");
+  const nb = document.getElementById("combo-nb");
+  if (combo >= 2) {
+    nb.textContent = combo;
+    badge.classList.remove("hidden");
+    badge.classList.add("flex");
+    badge.classList.remove("combo-pop");
+    void badge.offsetWidth;
+    badge.classList.add("combo-pop");
+    if (combo % 3 === 0) fireConfetti(0.6);
+  } else {
+    badge.classList.add("hidden");
+    badge.classList.remove("flex");
+  }
+}
+
+function normalize(s) {
+  return s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+async function init() {
+  const res = await fetch(`/api/decks/${DECK_ID}/cards.json`);
+  const data = await res.json();
+  cards = data.cards.slice();
+  if (cards.length === 0) { document.getElementById("empty-zone").classList.remove("hidden"); return; }
+  document.getElementById("dictee-zone").classList.remove("hidden");
+  renderCard();
+}
+
+function renderCard() {
+  revealedCount = 1;
+  const c = cards[idx];
+  document.getElementById("def-hint").textContent = c.definition;
+  document.getElementById("answer-input").value = "";
+  document.getElementById("feedback").textContent = "";
+  document.getElementById("hint-line").textContent = "";
+  document.getElementById("counter").textContent = `${idx + 1} / ${cards.length}`;
+  const pct = Math.round((idx / cards.length) * 100);
+  const bar = document.getElementById("progress-bar");
+  bar.style.width = pct + "%";
+  bar.className = "progress-fill h-full rounded-full " + (pct < 34 ? "bg-rose-500" : pct < 75 ? "bg-amber-400" : "bg-emerald-400");
+  document.getElementById("answer-input").focus();
+  setTimeout(speakTerm, 300);
+}
+
+function speakTerm() {
+  if (!("speechSynthesis" in window)) return;
+  const c = cards[idx];
+  const utter = new SpeechSynthesisUtterance(c.term);
+  utter.lang = "fr-FR";
+  utter.rate = 0.95;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+function revealHint() {
+  const term = cards[idx].term;
+  revealedCount = Math.min(term.length, revealedCount + 1);
+  const line = term.split("").map((ch, i) => (i < revealedCount || ch === " " ? ch : "_")).join(" ");
+  document.getElementById("hint-line").textContent = line;
+}
+
+function checkAnswer(e) {
+  e.preventDefault();
+  const input = document.getElementById("answer-input");
+  const c = cards[idx];
+  const ok = normalize(input.value) === normalize(c.term);
+  const feedback = document.getElementById("feedback");
+
+  updateCombo(ok);
+
+  if (ok) {
+    correctCount++;
+    feedback.innerHTML = '<i data-lucide="check-circle-2" class="w-4 h-4 inline -mt-0.5"></i> Exact !';
+    feedback.className = "mt-4 text-sm font-semibold h-5 text-emerald-400";
+    postJSON(`/api/cards/${c.id}/review`, { difficulty: "facile" });
+  } else {
+    feedback.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4 inline -mt-0.5"></i> La bonne réponse était : ${c.term}`;
+    feedback.className = "mt-4 text-sm font-semibold h-5 text-rose-400";
+    postJSON(`/api/cards/${c.id}/review`, { difficulty: "a_revoir" });
+  }
+  refreshIcons();
+
+  setTimeout(() => {
+    idx++;
+    if (idx >= cards.length) finishSession();
+    else renderCard();
+  }, 1100);
+  return false;
+}
+
+async function finishSession() {
+  const score = Math.round((correctCount / cards.length) * 100);
+  fireConfetti(score >= 80 ? 1.6 : 1);
+  const result = await completeStudySession(DECK_ID, "dictee", score);
+  document.getElementById("finish-icon").setAttribute("data-lucide", score === 100 ? "trophy" : "headphones");
+  document.getElementById("dictee-zone").classList.add("hidden");
+  const modal = document.getElementById("summary-modal");
+  modal.classList.remove("hidden"); modal.classList.add("flex");
+  rollUp(document.getElementById("score-rollup"), score);
+  document.getElementById("xp-line").innerHTML = `+${result.xp_gained} XP · Série : ${result.streak} <i data-lucide="flame" class="w-3.5 h-3.5 inline text-omnia-orange"></i>`;
+  refreshIcons();
+}
+
+init();
+</script>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ deck.title }} — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
+  <div class="flex items-start gap-4">
+    <span class="text-5xl">{{ deck.cover_emoji }}</span>
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-extrabold">{{ deck.title }}</h1>
+      <p class="text-slate-400 text-sm mt-1 max-w-xl">{{ deck.description or "Aucune description." }}</p>
+      <div class="flex flex-wrap items-center gap-2 mt-3 text-xs">
+        <span class="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">{{ deck.category }}</span>
+        <span class="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">{{ deck.card_count }} cartes</span>
+        <span class="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">par {{ deck.owner.display_name }}</span>
+        {% if deck.is_public %}<span class="px-2.5 py-1 rounded-full bg-omnia-orange/15 text-omnia-orange font-semibold">Public</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap shrink-0">
+    <a href="{{ url_for('deck_export_csv', deck_id=deck.id) }}" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition"><i data-lucide="download" class="w-4 h-4"></i>Exporter CSV</a>
+    {% if not is_owner %}
+    <button onclick="toggleFavorite({{ deck.id }}, this)" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition {{ 'text-omnia-red' if is_fav else '' }}">
+      <i data-lucide="heart" class="w-4 h-4 {{ 'fill-current' if is_fav }}"></i>{{ 'Favori' if is_fav else 'Ajouter aux favoris' }}
+    </button>
+    {% else %}
+    <button type="button" onclick="copyShareLink()" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition"><i data-lucide="link-2" class="w-4 h-4"></i>Lien de partage</button>
+    <a href="{{ url_for('deck_edit', deck_id=deck.id) }}" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition"><i data-lucide="pencil" class="w-4 h-4"></i>Modifier</a>
+    <form method="POST" action="{{ url_for('deck_delete', deck_id=deck.id) }}" onsubmit="return confirm('Supprimer définitivement ce deck ?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-omnia-red/10 text-omnia-red border border-omnia-red/20 hover:bg-omnia-red/20 transition"><i data-lucide="trash-2" class="w-4 h-4"></i>Supprimer</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if deck.tag_list %}
+<div class="flex flex-wrap gap-2 -mt-4 mb-8">
+  {% for t in deck.tag_list %}
+  <span class="text-[11px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400">#{{ t }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2 class="text-lg font-bold mb-4 flex items-center gap-2"><i data-lucide="gamepad-2" class="w-5 h-5 text-omnia-orange"></i>Choisis un mode de révision</h2>
+<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+  {% set modes = [
+    ('flashcards', 'layers', 'Flashcards 3D', 'Retourne les cartes et auto-évalue-toi.'),
+    ('match', 'grid-3x3', 'Match — Sprint', 'Associe les paires contre la montre.'),
+    ('swipe', 'hand', 'Swipe rapide', 'Glisse à droite si tu maîtrises, à gauche sinon.'),
+    ('quiz', 'list-checks', 'Quiz QCM', 'Questions à choix multiples chronométrées.'),
+    ('dictee', 'headphones', 'Dictée audio', 'Écoute et orthographie le terme exact.'),
+  ] %}
+  {% for mode, icon, label, desc in modes %}
+  <a href="{{ url_for('study', deck_id=deck.id, mode=mode) }}" class="glass rounded-2xl p-5 hover:border-omnia-orange/40 hover:-translate-y-1 transition group stagger-item">
+    <div class="w-11 h-11 rounded-xl bg-omnia-orange/15 text-omnia-orange flex items-center justify-center group-hover:scale-110 transition-transform"><i data-lucide="{{ icon }}" class="w-5 h-5"></i></div>
+    <h3 class="font-bold mt-3 group-hover:text-omnia-orange transition">{{ label }}</h3>
+    <p class="text-xs text-slate-400 mt-1">{{ desc }}</p>
+  </a>
+  {% endfor %}
+</div>
+
+<h2 class="text-lg font-bold mb-4 flex items-center gap-2"><i data-lucide="eye" class="w-5 h-5 text-omnia-orange"></i>Aperçu des cartes</h2>
+{% if deck.card_count %}
+<div class="grid sm:grid-cols-2 gap-3">
+  {% for c in deck.cards %}
+  <div class="glass rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+    <span class="font-semibold text-sm flex items-center gap-2">
+      {% if c.image_url %}<img src="{{ c.image_url }}" alt="" class="w-8 h-8 rounded-lg object-cover">{% endif %}
+      {{ c.term }}
+    </span>
+    <span class="text-slate-400 text-sm text-right">{{ c.definition }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="glass rounded-2xl p-8 text-center text-slate-400">Ce deck n'a pas encore de carte.</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+function copyShareLink() {
+  const url = `${window.location.origin}{{ url_for('deck_shared', token=deck.share_token) }}`;
+  navigator.clipboard.writeText(url).then(
+    () => toast("Lien de partage copié !", { icon: "link-2" }),
+    () => prompt("Copie ce lien :", url)
+  );
+}
+</script>
+{% endblock %}

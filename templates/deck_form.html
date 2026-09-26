@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Modifier' if deck else 'Nouveau deck' }} — {{ app_name }}{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl sm:text-3xl font-extrabold mb-6 flex items-center gap-2.5">
+  <i data-lucide="{{ 'pencil' if deck else 'sparkles' }}" class="w-7 h-7 text-omnia-orange"></i>
+  {{ 'Modifier le deck' if deck else 'Créer un nouveau deck' }}
+</h1>
+
+<form method="POST" enctype="multipart/form-data" action="{{ url_for('deck_edit', deck_id=deck.id) if deck else url_for('deck_new') }}" class="space-y-6">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="glass rounded-2xl p-6 space-y-4">
+    <div class="grid sm:grid-cols-[80px_1fr] gap-4">
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Icône</label>
+        <input type="text" name="cover_emoji" maxlength="4" value="{{ deck.cover_emoji if deck else '📚' }}"
+               class="w-full text-center text-2xl rounded-xl bg-white/5 border border-white/10 px-2 py-2.5">
+      </div>
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Titre</label>
+        <input type="text" name="title" required value="{{ deck.title if deck else '' }}"
+               class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-omnia-orange/60"
+               placeholder="Ex : Vocabulaire espagnol - Chapitre 3">
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Description</label>
+      <textarea name="description" rows="2" class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-omnia-orange/60"
+                placeholder="De quoi parle ce deck ?">{{ deck.description if deck else '' }}</textarea>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Catégorie</label>
+        <select name="category" class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5">
+          {% for c in categories %}
+          <option value="{{ c }}" {{ 'selected' if deck and deck.category == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex items-end pb-2.5">
+        <label class="inline-flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" name="is_public" {{ 'checked' if deck and deck.is_public }} class="w-4 h-4 rounded accent-orange-500">
+          Rendre ce deck public (visible dans Explorer)
+        </label>
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Tags</label>
+      <input type="text" name="tags" value="{{ deck.tags if deck else '' }}"
+             class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omnia-orange/60"
+             placeholder="espagnol, verbes, b1 (séparés par des virgules)">
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-6">
+    <h2 class="font-bold mb-1 flex items-center gap-2"><i data-lucide="file-up" class="w-4 h-4 text-omnia-orange"></i>Importer des cartes (optionnel)</h2>
+    <p class="text-xs text-slate-400 mb-3">Fichier CSV avec deux colonnes <code class="font-mono">terme,définition</code> (ou <code class="font-mono">;</code>). Les cartes importées s'ajoutent à celles ci-dessous.</p>
+    <input type="file" name="csv_file" accept=".csv,text/csv"
+           class="w-full text-sm rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-omnia-orange/20 file:text-omnia-orange file:font-semibold">
+  </div>
+
+  <div class="glass rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-bold flex items-center gap-2"><i data-lucide="layers" class="w-4 h-4 text-omnia-orange"></i>Cartes</h2>
+      <button type="button" onclick="addCardRow()" class="flex items-center gap-1.5 text-sm font-semibold text-omnia-orange hover:underline"><i data-lucide="plus-circle" class="w-4 h-4"></i>Ajouter une carte</button>
+    </div>
+    <div id="card-rows" class="space-y-3">
+      {% if deck %}
+        {% for c in deck.cards %}
+        <div class="flex gap-2 items-start card-row">
+          <input type="hidden" name="card_id[]" value="{{ c.id }}">
+          <input type="text" name="term[]" value="{{ c.term }}" placeholder="Terme"
+                 class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+          <input type="text" name="definition[]" value="{{ c.definition }}" placeholder="Définition"
+                 class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+          <input type="url" name="image_url[]" value="{{ c.image_url or '' }}" placeholder="Image (URL, optionnel)"
+                 class="w-40 shrink-0 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+          <button type="button" onclick="removeCardPermanently({{ c.id }}, this)" class="p-2 text-slate-500 hover:text-omnia-red transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        {% endfor %}
+      {% endif %}
+      <div class="flex gap-2 items-start card-row">
+        <input type="hidden" name="card_id[]" value="">
+        <input type="text" name="term[]" placeholder="Terme" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+        <input type="text" name="definition[]" placeholder="Définition" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+        <input type="url" name="image_url[]" placeholder="Image (URL, optionnel)" class="w-40 shrink-0 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+        <button type="button" onclick="this.closest('.card-row').remove()" class="p-2 text-slate-500 hover:text-omnia-red transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-end gap-3">
+    <a href="{{ url_for('deck_detail', deck_id=deck.id) if deck else url_for('dashboard') }}" class="px-5 py-2.5 rounded-xl font-semibold bg-white/5 border border-white/10 hover:bg-white/10 transition">Annuler</a>
+    <button type="submit" class="px-6 py-2.5 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-105 transition">
+      {{ 'Enregistrer' if deck else 'Créer le deck' }}
+    </button>
+  </div>
+</form>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function addCardRow() {
+  const container = document.getElementById("card-rows");
+  const row = document.createElement("div");
+  row.className = "flex gap-2 items-start card-row";
+  row.innerHTML = `
+    <input type="hidden" name="card_id[]" value="">
+    <input type="text" name="term[]" placeholder="Terme" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+    <input type="text" name="definition[]" placeholder="Définition" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+    <input type="url" name="image_url[]" placeholder="Image (URL, optionnel)" class="w-40 shrink-0 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+    <button type="button" onclick="this.closest('.card-row').remove()" class="p-2 text-slate-500 hover:text-omnia-red transition"><i data-lucide="x" class="w-4 h-4"></i></button>`;
+  container.appendChild(row);
+  row.querySelector("input[name='term[]']").focus();
+  refreshIcons();
+}
+function removeCardPermanently(cardId, btn) {
+  postJSON(`/cards/${cardId}/delete`).then(() => btn.closest('.card-row').remove());
+}
+</script>
+{% endblock %}

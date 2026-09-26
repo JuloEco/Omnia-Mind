@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Match — {{ deck.title }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="text-sm text-slate-400 hover:text-white transition">← {{ deck.title }}</a>
+  <div class="flex items-center gap-4 text-sm font-bold">
+    <span class="flex items-center gap-1.5"><i data-lucide="timer" class="w-4 h-4 text-slate-400"></i><span id="timer">0.0</span>s</span>
+    <span id="combo-badge" class="hidden px-2.5 py-1 rounded-full bg-gradient-to-r from-omnia-orange to-omnia-red text-xs items-center gap-1"><i data-lucide="flame" class="w-3.5 h-3.5"></i>Combo x<span id="combo-nb">1</span></span>
+  </div>
+</div>
+
+<div id="grid" class="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-8"></div>
+
+<div id="finish-modal" class="hidden fixed inset-0 z-[95] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="glass rounded-3xl p-8 max-w-sm w-full text-center shadow-glow">
+    <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow"><i id="finish-icon" data-lucide="target" class="w-8 h-8 text-white"></i></div>
+    <h2 class="text-xl font-extrabold mb-1">Terminé !</h2>
+    <p class="text-4xl font-black my-4"><span id="time-rollup">0.0</span>s</p>
+    <p id="best-line" class="text-sm text-slate-400 mb-2"></p>
+    <p id="xp-line" class="text-sm text-omnia-orange font-bold mb-6"></p>
+    <div class="flex gap-3">
+      <button onclick="location.reload()" class="flex-1 py-3 rounded-xl font-bold bg-white/5 border border-white/10 hover:bg-white/10 transition">Rejouer</button>
+      <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="flex-1 py-3 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-105 transition">Quitter</a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DECK_ID = {{ deck.id }};
+const MAX_PAIRS = 8;
+let tiles = [];
+let selected = [];
+let matchedCount = 0;
+let combo = 0;
+let startTime = null;
+let timerInterval = null;
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+async function init() {
+  const res = await fetch(`/api/decks/${DECK_ID}/cards.json`);
+  const data = await res.json();
+  const cards = shuffle(data.cards.slice()).slice(0, MAX_PAIRS);
+
+  tiles = [];
+  cards.forEach((c) => {
+    tiles.push({ pairId: c.id, kind: "term", text: c.term, image_url: c.image_url });
+    tiles.push({ pairId: c.id, kind: "definition", text: c.definition });
+  });
+  tiles = shuffle(tiles);
+
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  tiles.forEach((t, i) => {
+    const el = document.createElement("div");
+    el.className = "match-tile glass rounded-xl p-3 text-center text-sm font-semibold min-h-[76px] flex flex-col items-center justify-center gap-1";
+    el.innerHTML = t.image_url
+      ? `<img src="${t.image_url}" alt="" class="max-h-8 rounded object-cover pointer-events-none"><span class="pointer-events-none">${t.text}</span>`
+      : `<span class="pointer-events-none">${t.text}</span>`;
+    el.dataset.index = i;
+    el.onclick = () => selectTile(i, el);
+    grid.appendChild(el);
+  });
+
+  startTime = performance.now();
+  timerInterval = setInterval(() => {
+    const elapsed = (performance.now() - startTime) / 1000;
+    document.getElementById("timer").textContent = elapsed.toFixed(1);
+  }, 100);
+}
+
+function selectTile(i, el) {
+  if (el.classList.contains("matched") || el.classList.contains("selected")) return;
+  if (selected.length === 2) return;
+
+  el.classList.add("selected");
+  selected.push({ i, el });
+
+  if (selected.length === 2) {
+    const [a, b] = selected;
+    const tileA = tiles[a.i], tileB = tiles[b.i];
+    if (tileA.pairId === tileB.pairId && tileA.kind !== tileB.kind) {
+      combo++;
+      updateCombo();
+      setTimeout(() => {
+        a.el.classList.add("matched");
+        b.el.classList.add("matched");
+        selected = [];
+        matchedCount++;
+        if (matchedCount === tiles.length / 2) finishGame();
+      }, 200);
+    } else {
+      combo = 0;
+      updateCombo();
+      a.el.classList.add("wrong");
+      b.el.classList.add("wrong");
+      setTimeout(() => {
+        a.el.classList.remove("selected", "wrong");
+        b.el.classList.remove("selected", "wrong");
+        selected = [];
+      }, 500);
+    }
+  }
+}
+
+function updateCombo() {
+  const badge = document.getElementById("combo-badge");
+  const nb = document.getElementById("combo-nb");
+  if (combo >= 2) {
+    badge.classList.remove("hidden");
+    badge.classList.add("flex");
+    nb.textContent = combo;
+    badge.classList.remove("combo-pop");
+    void badge.offsetWidth;
+    badge.classList.add("combo-pop");
+  } else {
+    badge.classList.add("hidden");
+    badge.classList.remove("flex");
+  }
+}
+
+async function finishGame() {
+  clearInterval(timerInterval);
+  const elapsed = (performance.now() - startTime) / 1000;
+  fireConfetti(1.4);
+  const scoreRes = await postJSON(`/api/decks/${DECK_ID}/match_score`, { time_seconds: elapsed });
+  const result = await completeStudySession(DECK_ID, "match", 0);
+
+  document.getElementById("finish-icon").setAttribute("data-lucide", scoreRes.is_new_best ? "trophy" : "target");
+  document.getElementById("best-line").textContent = scoreRes.is_new_best
+    ? "Nouveau record sur ce deck !"
+    : (scoreRes.best_time ? `Meilleur temps : ${scoreRes.best_time.toFixed(1)}s` : "");
+  document.getElementById("xp-line").innerHTML = `+${result.xp_gained} XP · Série : ${result.streak} <i data-lucide="flame" class="w-3.5 h-3.5 inline text-omnia-orange"></i>`;
+  refreshIcons();
+
+  const modal = document.getElementById("finish-modal");
+  modal.classList.remove("hidden"); modal.classList.add("flex");
+  rollUp(document.getElementById("time-rollup"), elapsed, 700, "", 1);
+}
+
+init();
+</script>
+{% endblock %}

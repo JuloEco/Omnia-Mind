@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.462.0/dist/umd/lucide.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
+        colors: {
+          bg: '#0b0e17',
+          panel: '#131826',
+          omnia: { orange: '#ff5f3d', red: '#ff3d6a' },
+        },
+        boxShadow: { glow: '0 0 40px -8px rgba(255,95,61,0.45)' },
+      }
+    }
+  }
+</script>
+</head>
+<body class="bg-bg text-slate-100 font-sans min-h-screen antialiased" style="background-image: radial-gradient(circle at 15% 0%, rgba(255,95,61,0.12), transparent 45%), radial-gradient(circle at 85% 20%, rgba(255,61,106,0.10), transparent 40%);">
+
+{% if current_user %}
+<nav class="sticky top-0 z-40 backdrop-blur-xl bg-panel/60 border-b border-white/5">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+    <a href="{{ url_for('dashboard') }}" class="flex items-center gap-2 shrink-0 group">
+      <span class="w-8 h-8 rounded-xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow group-hover:rotate-6 transition-transform">
+        <i data-lucide="brain-circuit" class="w-[18px] h-[18px] text-white"></i>
+      </span>
+      <span class="text-lg font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-omnia-orange to-omnia-red">{{ app_name }}</span>
+    </a>
+    <div class="hidden md:flex items-center gap-1 text-sm font-medium">
+      <a href="{{ url_for('dashboard') }}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-white/5 transition {{ 'text-omnia-orange' if request.endpoint=='dashboard' }}"><i data-lucide="layout-dashboard" class="w-4 h-4"></i>Accueil</a>
+      <a href="{{ url_for('explore') }}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-white/5 transition {{ 'text-omnia-orange' if request.endpoint=='explore' }}"><i data-lucide="compass" class="w-4 h-4"></i>Explorer</a>
+      <a href="{{ url_for('leaderboard') }}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-white/5 transition {{ 'text-omnia-orange' if request.endpoint=='leaderboard' }}"><i data-lucide="trophy" class="w-4 h-4"></i>Classement</a>
+      <a href="{{ url_for('deck_new') }}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-white/5 transition {{ 'text-omnia-orange' if request.endpoint=='deck_new' }}"><i data-lucide="plus-circle" class="w-4 h-4"></i>Créer un deck</a>
+    </div>
+    <div class="flex items-center gap-1">
+      <a href="{{ url_for('profile') }}" class="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full hover:bg-white/5 transition">
+        <span class="hidden sm:flex items-center gap-1 text-xs font-bold text-slate-400">
+          <i data-lucide="flame" class="w-3.5 h-3.5 text-omnia-orange flame-flicker"></i>{{ current_user.streak_count }}
+        </span>
+        <span class="w-px h-4 bg-white/10 hidden sm:block"></span>
+        <span class="text-lg leading-none">{{ current_user.avatar_emoji }}</span>
+        <span class="hidden sm:inline text-sm font-semibold">{{ current_user.display_name }}</span>
+        <span class="text-[10px] font-extrabold text-omnia-orange bg-omnia-orange/15 px-1.5 py-0.5 rounded-full">Nv.{{ current_user.level_data.level }}</span>
+      </a>
+      <a href="{{ url_for('logout') }}" title="Déconnexion" class="p-2 rounded-lg hover:bg-white/5 transition text-slate-400 hover:text-white"><i data-lucide="log-out" class="w-[18px] h-[18px]"></i></a>
+    </div>
+  </div>
+  <div class="md:hidden flex items-center justify-around border-t border-white/5 text-xs font-medium">
+    <a href="{{ url_for('dashboard') }}" class="flex-1 flex flex-col items-center gap-0.5 py-2 {{ 'text-omnia-orange' if request.endpoint=='dashboard' }}"><i data-lucide="layout-dashboard" class="w-[18px] h-[18px]"></i>Accueil</a>
+    <a href="{{ url_for('explore') }}" class="flex-1 flex flex-col items-center gap-0.5 py-2 {{ 'text-omnia-orange' if request.endpoint=='explore' }}"><i data-lucide="compass" class="w-[18px] h-[18px]"></i>Explorer</a>
+    <a href="{{ url_for('leaderboard') }}" class="flex-1 flex flex-col items-center gap-0.5 py-2 {{ 'text-omnia-orange' if request.endpoint=='leaderboard' }}"><i data-lucide="trophy" class="w-[18px] h-[18px]"></i>Classement</a>
+    <a href="{{ url_for('deck_new') }}" class="flex-1 flex flex-col items-center gap-0.5 py-2 {{ 'text-omnia-orange' if request.endpoint=='deck_new' }}"><i data-lucide="plus-circle" class="w-[18px] h-[18px]"></i>Créer</a>
+  </div>
+</nav>
+{% endif %}
+
+<div id="toast-stack" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 items-end"></div>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div class="max-w-3xl mx-auto mt-4 px-4 space-y-2">
+    {% for m in messages %}
+      <div class="rounded-xl px-4 py-3 text-sm font-medium bg-panel/80 border border-white/10 backdrop-blur-xl shadow-lg">{{ m }}</div>
+    {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Overlay Level Up -->
+<div id="level-up-overlay" class="hidden fixed inset-0 z-[90] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="text-center animate-[popin_.4s_ease]">
+    <p class="text-omnia-orange font-extrabold tracking-[0.3em] text-xs mb-2">NOUVEAU NIVEAU ATTEINT</p>
+    <h1 class="text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-omnia-orange to-omnia-red mb-3">LEVEL UP !</h1>
+    <p id="new-lvl-nb" class="text-3xl font-extrabold mb-6"></p>
+    <button onclick="document.getElementById('level-up-overlay').classList.add('hidden')" class="px-6 py-3 rounded-xl bg-gradient-to-r from-omnia-orange to-omnia-red font-bold shadow-glow hover:scale-105 transition">Continuer</button>
+  </div>
+</div>
+
+<!-- Overlay Succès débloqué -->
+<div id="badge-unlock-overlay" class="hidden fixed inset-0 z-[90] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="text-center animate-[popin_.4s_ease] glass rounded-3xl p-8 max-w-xs mx-4 shadow-glow">
+    <p class="text-omnia-orange font-extrabold tracking-[0.3em] text-xs mb-3">SUCCÈS DÉBLOQUÉ</p>
+    <div class="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow badge-pop mb-4">
+      <i id="badge-icon" data-lucide="award" class="w-10 h-10 text-white"></i>
+    </div>
+    <p id="badge-label" class="text-xl font-black mb-1"></p>
+    <p id="badge-desc" class="text-sm text-slate-400 mb-6"></p>
+    <button onclick="closeBadgeOverlay()" class="px-6 py-3 rounded-xl bg-gradient-to-r from-omnia-orange to-omnia-red font-bold shadow-glow hover:scale-105 transition">Génial !</button>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  const BADGE_CATALOG = {{ badge_catalog | tojson }};
+  const PENDING_BADGES = {{ pending_badges | tojson }};
+  if (window.lucide) lucide.createIcons();
+  if (PENDING_BADGES.length) enqueueBadges(PENDING_BADGES);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

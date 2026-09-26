@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Classement — {{ app_name }}{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl sm:text-3xl font-extrabold mb-2 flex items-center gap-2.5"><i data-lucide="trophy" class="w-7 h-7 text-omnia-orange"></i>Classement</h1>
+<p class="text-slate-400 text-sm mb-8">Les 20 apprenants les plus actifs de {{ app_name }}, classés par XP.</p>
+
+<div class="glass rounded-2xl px-4 py-3 mb-6 flex items-center gap-3">
+  <div class="w-9 h-9 rounded-lg bg-omnia-orange/15 text-omnia-orange flex items-center justify-center shrink-0">
+    <i data-lucide="user" class="w-4 h-4"></i>
+  </div>
+  <p class="text-sm">Ta position actuelle : <span class="font-extrabold text-omnia-orange">#{{ rank }}</span></p>
+</div>
+
+<div class="glass rounded-2xl divide-y divide-white/5 overflow-hidden">
+  {% for u in top %}
+  <div class="rank-row px-4 sm:px-5 py-3.5 flex items-center gap-4 {{ 'bg-omnia-orange/10' if u.id == current_user.id }}">
+    <div class="w-8 text-center shrink-0">
+      {% if loop.index == 1 %}
+        <i data-lucide="crown" class="w-5 h-5 text-amber-400 mx-auto"></i>
+      {% elif loop.index == 2 %}
+        <i data-lucide="medal" class="w-5 h-5 text-slate-300 mx-auto"></i>
+      {% elif loop.index == 3 %}
+        <i data-lucide="medal" class="w-5 h-5 text-amber-600 mx-auto"></i>
+      {% else %}
+        <span class="text-sm font-bold text-slate-500">{{ loop.index }}</span>
+      {% endif %}
+    </div>
+    <span class="text-2xl shrink-0">{{ u.avatar_emoji }}</span>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-sm truncate">{{ u.display_name }}{{ ' (toi)' if u.id == current_user.id }}</p>
+      <p class="text-[11px] text-slate-500 flex items-center gap-1"><i data-lucide="flame" class="w-3 h-3"></i>{{ u.streak_count }} jours de série</p>
+    </div>
+    <div class="text-right shrink-0">
+      <p class="font-black text-omnia-orange">{{ u.xp }} XP</p>
+      <p class="text-[11px] text-slate-500">Niveau {{ u.level_data.level }}</p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

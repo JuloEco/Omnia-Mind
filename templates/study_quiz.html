@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Quiz — {{ deck.title }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="text-sm text-slate-400 hover:text-white transition">← {{ deck.title }}</a>
+  <div class="flex items-center gap-3">
+    <span id="combo-badge" class="hidden items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-omnia-orange to-omnia-red text-xs font-bold"><i data-lucide="flame" class="w-3.5 h-3.5"></i>Combo x<span id="combo-nb">1</span></span>
+    <div class="text-sm font-semibold">Score : <span id="score-live">0</span></div>
+  </div>
+</div>
+
+<div id="segments" class="flex gap-1.5 mb-8"></div>
+
+<div id="quiz-zone" class="hidden">
+  <p class="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-2">Quelle est la définition de :</p>
+  <img id="question-image" src="" alt="" class="hidden max-h-40 rounded-xl object-cover mb-4">
+  <h2 id="question-term" class="text-2xl font-extrabold mb-8"></h2>
+  <div id="options" class="grid gap-3"></div>
+</div>
+
+<div id="empty-zone" class="hidden glass rounded-2xl p-10 text-center">
+  <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/5 flex items-center justify-center text-slate-400"><i data-lucide="circle-help" class="w-7 h-7"></i></div>
+  <p class="font-semibold">Ce deck a besoin d'au moins 2 cartes pour un quiz.</p>
+</div>
+
+<div id="summary-modal" class="hidden fixed inset-0 z-[95] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="glass rounded-3xl p-8 max-w-sm w-full text-center shadow-glow">
+    <div id="finish-icon-wrap" class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow"><i id="finish-icon" data-lucide="list-checks" class="w-8 h-8 text-white"></i></div>
+    <h2 class="text-xl font-extrabold mb-1">Quiz terminé !</h2>
+    <p class="text-4xl font-black my-4"><span id="score-rollup">0</span>%</p>
+    <p id="xp-line" class="text-sm text-omnia-orange font-bold mb-6"></p>
+    <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="block w-full py-3 rounded-xl font-bold bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow hover:scale-105 transition">Retour au deck</a>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DECK_ID = {{ deck.id }};
+let questions = [];
+let idx = 0;
+let correctCount = 0;
+let answering = false;
+let combo = 0;
+
+function updateCombo(isCorrect) {
+  combo = isCorrect ? combo + 1 : 0;
+  const badge = document.getElementById("combo-badge");
+  const nb = document.getElementById("combo-nb");
+  if (combo >= 2) {
+    nb.textContent = combo;
+    badge.classList.remove("hidden");
+    badge.classList.add("flex");
+    if (combo % 3 === 0) fireConfetti(0.6); // petit bonus visuel tous les 3 combos
+  } else {
+    badge.classList.add("hidden");
+    badge.classList.remove("flex");
+  }
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+  return arr;
+}
+
+async function init() {
+  const res = await fetch(`/api/decks/${DECK_ID}/cards.json`);
+  const data = await res.json();
+  const cards = data.cards;
+  if (cards.length < 2) { document.getElementById("empty-zone").classList.remove("hidden"); return; }
+
+  questions = shuffle(cards.slice()).map((c) => {
+    const distractors = shuffle(cards.filter(x => x.id !== c.id).map(x => x.definition)).slice(0, 3);
+    const options = shuffle([c.definition, ...distractors]);
+    return { term: c.term, correct: c.definition, options, image_url: c.image_url };
+  });
+
+  const segWrap = document.getElementById("segments");
+  questions.forEach((_, i) => {
+    const seg = document.createElement("div");
+    seg.className = "h-1.5 flex-1 rounded-full bg-white/10";
+    seg.id = `seg-${i}`;
+    segWrap.appendChild(seg);
+  });
+
+  document.getElementById("quiz-zone").classList.remove("hidden");
+  renderQuestion();
+}
+
+function renderQuestion() {
+  answering = false;
+  const q = questions[idx];
+  document.getElementById("question-term").textContent = q.term;
+  const img = document.getElementById("question-image");
+  if (q.image_url) { img.src = q.image_url; img.classList.remove("hidden"); }
+  else { img.src = ""; img.classList.add("hidden"); }
+  const optWrap = document.getElementById("options");
+  optWrap.innerHTML = "";
+  q.options.forEach((opt) => {
+    const btn = document.createElement("button");
+    btn.className = "text-left px-5 py-4 rounded-xl glass hover:border-omnia-orange/40 transition font-medium";
+    btn.textContent = opt;
+    btn.onclick = () => answer(opt, btn);
+    optWrap.appendChild(btn);
+  });
+}
+
+function answer(opt, btn) {
+  if (answering) return;
+  answering = true;
+  const q = questions[idx];
+  const isCorrect = opt === q.correct;
+  document.querySelectorAll("#options button").forEach((b) => {
+    b.disabled = true;
+    if (b.textContent === q.correct) b.classList.add("!bg-emerald-500/20", "!border-emerald-500/50", "!text-emerald-300");
+    else if (b === btn) b.classList.add("!bg-rose-500/20", "!border-rose-500/50", "!text-rose-300", "card-shake");
+  });
+  const seg = document.getElementById(`seg-${idx}`);
+  seg.className = `h-1.5 flex-1 rounded-full ${isCorrect ? "bg-emerald-400" : "bg-rose-500"}`;
+  if (isCorrect) { correctCount++; document.getElementById("score-live").textContent = correctCount; }
+  updateCombo(isCorrect);
+
+  setTimeout(() => {
+    idx++;
+    if (idx >= questions.length) finishQuiz();
+    else renderQuestion();
+  }, 900);
+}
+
+async function finishQuiz() {
+  document.getElementById("quiz-zone").classList.add("hidden");
+  const score = Math.round((correctCount / questions.length) * 100);
+  fireConfetti(score >= 80 ? 1.6 : 1);
+  const result = await completeStudySession(DECK_ID, "quiz", score);
+  document.getElementById("finish-icon").setAttribute("data-lucide", score === 100 ? "trophy" : "list-checks");
+  refreshIcons();
+  const modal = document.getElementById("summary-modal");
+  modal.classList.remove("hidden"); modal.classList.add("flex");
+  rollUp(document.getElementById("score-rollup"), score);
+  document.getElementById("xp-line").innerHTML = `+${result.xp_gained} XP · Série : ${result.streak} <i data-lucide="flame" class="w-3.5 h-3.5 inline text-omnia-orange"></i>`;
+  refreshIcons();
+}
+
+init();
+</script>
+{% endblock %}
