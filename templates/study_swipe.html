@@ -45,6 +45,7 @@ let mastered = 0;
 let dragging = false, startX = 0, startY = 0, curX = 0, curY = 0;
 let revealed = false;
 let combo = 0;
+let requeueCounts = {};
 
 function updateCombo(isRight) {
   combo = isRight ? combo + 1 : 0;
@@ -148,6 +149,9 @@ async function doSwipe(dir, el, card) {
   if (dir === "right") mastered++;
   updateCombo(dir === "right");
   postJSON(`/api/cards/${card.id}/review`, { difficulty });
+  // Espacement massé : une carte swipée à gauche (non maîtrisée) revient
+  // plus loin dans la même session au lieu de disparaître pour de bon.
+  if (dir === "left") requeueAfterMiss(cards, idx, card, requeueCounts, card.id);
   idx++;
   setTimeout(() => {
     if (idx >= cards.length) finishSession();

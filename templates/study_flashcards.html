@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Flashcards — {{ deck.title }}{% endblock %}
+{% block title %}{{ 'Cartes fragiles' if focus_mode else 'Flashcards' }} — {{ deck.title }}{% endblock %}
 {% block content %}
 
 <div class="flex items-center justify-between mb-6">
@@ -10,12 +10,18 @@
   </div>
 </div>
 
+{% if focus_mode %}
+<div class="glass rounded-xl px-4 py-2.5 mb-6 flex items-center gap-2 text-xs text-slate-400">
+  <i data-lucide="target" class="w-4 h-4 text-omnia-orange shrink-0"></i>Entraînement ciblé sur tes cartes les plus fragiles de ce deck — pas d'ordre SRS ici, juste tes points faibles.
+</div>
+{% endif %}
+
 <div class="h-2 rounded-full bg-white/10 overflow-hidden mb-10">
   <div id="progress-bar" class="progress-fill h-full rounded-full bg-omnia-red" style="width:0%"></div>
 </div>
 
 <div id="study-zone" class="hidden flex flex-col items-center">
-  <div class="relative w-full max-w-md h-72 sm:h-80 mb-8">
+  <div class="relative w-full max-w-md h-72 sm:h-80 mb-5">
     <div class="stack-shadow-2 glass"></div>
     <div class="stack-shadow-1 glass"></div>
     <div class="flip-scene w-full h-full">
@@ -26,10 +32,18 @@
         </div>
         <div class="flip-face flip-back glass">
           <p id="face-def" class="text-xl font-medium text-slate-200"></p>
+          <p id="your-answer" class="text-xs text-slate-500 mt-3 italic"></p>
         </div>
       </div>
     </div>
   </div>
+
+  <div id="recall-zone" class="w-full max-w-md mb-4">
+    <textarea id="recall-input" rows="2" maxlength="300"
+              placeholder="Essaie de répondre avant de retourner la carte (facultatif)…"
+              class="w-full text-sm rounded-xl bg-white/5 border border-white/10 px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-omnia-orange/60 transition"></textarea>
+  </div>
+
   <p class="text-xs text-slate-500 mb-6">Clique sur la carte ou appuie sur <kbd class="px-1.5 py-0.5 rounded bg-white/10">Espace</kbd> pour la retourner</p>
 
   <div id="rating-buttons" class="hidden w-full max-w-md grid grid-cols-3 gap-3">
@@ -41,15 +55,20 @@
 
 <div id="empty-zone" class="hidden glass rounded-2xl p-10 text-center">
   <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="party-popper" class="w-7 h-7"></i></div>
+  {% if focus_mode %}
+  <p class="font-semibold">Aucune carte fragile pour ce deck — tes bases sont solides !</p>
+  <p class="text-slate-400 text-sm mt-1">Continue à réviser normalement, on te préviendra si une carte devient fragile.</p>
+  {% else %}
   <p class="font-semibold">Aucune carte à réviser pour le moment !</p>
   <p class="text-slate-400 text-sm mt-1">Reviens plus tard, ou révise ce deck avec un autre mode.</p>
+  {% endif %}
   <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="inline-block mt-4 px-5 py-2.5 rounded-xl font-bold bg-white/5 border border-white/10 hover:bg-white/10 transition">Retour au deck</a>
 </div>
 
 <!-- Résumé de fin de session -->
 <div id="summary-modal" class="hidden fixed inset-0 z-[95] items-center justify-center bg-black/70 backdrop-blur-sm">
   <div class="glass rounded-3xl p-8 max-w-sm w-full text-center shadow-glow">
-    <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow"><i data-lucide="trophy" class="w-8 h-8 text-white"></i></div>
+    <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-omnia-orange to-omnia-red flex items-center justify-center shadow-glow"><i id="finish-icon" data-lucide="trophy" class="w-8 h-8 text-white"></i></div>
     <h2 class="text-xl font-extrabold mb-1">Session terminée !</h2>
     <p class="text-4xl font-black my-4"><span id="score-rollup">0</span>%</p>
     <p id="xp-line" class="text-sm text-omnia-orange font-bold mb-6"></p>
@@ -61,11 +80,13 @@
 {% block scripts %}
 <script>
 const DECK_ID = {{ deck.id }};
+const FOCUS_MODE = {{ 'true' if focus_mode else 'false' }};
 let queue = [];
 let idx = 0;
 let flipped = false;
 let stats = { facile: 0, moyen: 0, a_revoir: 0 };
 let combo = 0;
+let requeueCounts = {}; // clé -> nb de réinjections déjà faites pour cette carte
 
 function updateCombo(difficulty) {
   combo = difficulty === "facile" ? combo + 1 : 0;
@@ -85,7 +106,8 @@ function updateCombo(difficulty) {
 }
 
 async function init() {
-  const res = await fetch(`/api/decks/${DECK_ID}/srs_queue`);
+  const endpoint = FOCUS_MODE ? `/api/decks/${DECK_ID}/focus_queue` : `/api/decks/${DECK_ID}/srs_queue`;
+  const res = await fetch(endpoint);
   const data = await res.json();
   queue = data.queue;
   if (queue.length === 0) {
@@ -100,12 +122,16 @@ function renderCard() {
   const c = queue[idx];
   document.getElementById("face-term").textContent = c.term;
   document.getElementById("face-def").textContent = c.definition;
+  document.getElementById("your-answer").textContent = "";
   const img = document.getElementById("face-image");
   if (c.image_url) { img.src = c.image_url; img.classList.remove("hidden"); }
   else { img.src = ""; img.classList.add("hidden"); }
   flipped = false;
   document.getElementById("flip-card").classList.remove("is-flipped");
   document.getElementById("rating-buttons").classList.add("hidden");
+  document.getElementById("recall-zone").classList.remove("hidden");
+  document.getElementById("recall-input").value = "";
+  document.getElementById("recall-input").disabled = false;
   document.getElementById("counter").textContent = `${idx + 1} / ${queue.length}`;
   const pct = Math.round((idx / queue.length) * 100);
   const bar = document.getElementById("progress-bar");
@@ -116,7 +142,15 @@ function renderCard() {
 function flipCard() {
   flipped = !flipped;
   document.getElementById("flip-card").classList.toggle("is-flipped", flipped);
-  if (flipped) document.getElementById("rating-buttons").classList.remove("hidden");
+  if (flipped) {
+    document.getElementById("rating-buttons").classList.remove("hidden");
+    // Rappel actif : on capture ce que l'utilisateur a écrit AVANT de voir
+    // la réponse, pour qu'il compare lui-même son effort de récupération
+    // à la définition réelle (effet de génération).
+    const typed = document.getElementById("recall-input").value.trim();
+    document.getElementById("recall-input").disabled = true;
+    if (typed) document.getElementById("your-answer").textContent = `Ta réponse : "${typed}"`;
+  }
 }
 
 async function rate(difficulty) {
@@ -124,6 +158,13 @@ async function rate(difficulty) {
   stats[difficulty] = (stats[difficulty] || 0) + 1;
   updateCombo(difficulty);
   await postJSON(`/api/cards/${c.card_id}/review`, { difficulty });
+
+  // Espacement massé : une carte "à revoir" resurgit plus loin dans la
+  // MÊME session au lieu de disparaître jusqu'à la prochaine visite.
+  if (difficulty === "a_revoir") {
+    requeueAfterMiss(queue, idx, c, requeueCounts, c.card_id);
+  }
+
   idx++;
   if (idx >= queue.length) {
     finishSession();
@@ -138,7 +179,8 @@ async function finishSession() {
   const total = queue.length;
   const score = Math.round(((stats.facile + stats.moyen) / total) * 100);
   fireConfetti(score === 100 ? 2 : 1);
-  const result = await completeStudySession(DECK_ID, "flashcards", score);
+  const result = await completeStudySession(DECK_ID, FOCUS_MODE ? "focus" : "flashcards", score);
+  document.getElementById("finish-icon").setAttribute("data-lucide", score === 100 ? "trophy" : (FOCUS_MODE ? "target" : "trophy"));
   document.getElementById("study-zone").classList.add("hidden");
   const modal = document.getElementById("summary-modal");
   modal.classList.remove("hidden"); modal.classList.add("flex");
@@ -148,7 +190,7 @@ async function finishSession() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.code === "Space" && !document.getElementById("study-zone").classList.contains("hidden")) {
+  if (e.code === "Space" && document.activeElement.id !== "recall-input" && !document.getElementById("study-zone").classList.contains("hidden")) {
     e.preventDefault();
     flipCard();
   }

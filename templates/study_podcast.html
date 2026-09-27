@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Podcast — {{ deck.title }}{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <a href="{{ url_for('deck_detail', deck_id=deck.id) }}" class="text-sm text-slate-400 hover:text-white transition">← {{ deck.title }}</a>
+  <div class="text-sm font-semibold" id="counter">— / —</div>
+</div>
+
+<div class="glass rounded-xl px-4 py-2.5 mb-6 flex items-center gap-2 text-xs text-slate-400">
+  <i data-lucide="radio" class="w-4 h-4 text-omnia-orange shrink-0"></i>Mode mains libres : le deck se lit à voix haute en boucle, terme puis définition. Aucun score, aucun XP — juste pour réviser en marchant ou en voiture.
+</div>
+
+<div id="empty-zone" class="hidden glass rounded-2xl p-10 text-center">
+  <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/5 flex items-center justify-center text-slate-400"><i data-lucide="radio" class="w-7 h-7"></i></div>
+  <p class="font-semibold">Ce deck n'a pas encore de carte.</p>
+</div>
+
+<div id="player-zone" class="hidden flex flex-col items-center">
+  <div class="h-2 rounded-full bg-white/10 overflow-hidden mb-8 w-full max-w-md">
+    <div id="progress-bar" class="h-full rounded-full bg-omnia-orange transition-all" style="width:0%"></div>
+  </div>
+
+  <div class="relative w-full max-w-md glass rounded-3xl p-8 mb-8 text-center shadow-glow min-h-[220px] flex flex-col items-center justify-center">
+    <div class="flex items-end gap-1.5 h-10 mb-5" id="eq">
+      <div class="eq-bar eq-paused"></div>
+      <div class="eq-bar eq-paused"></div>
+      <div class="eq-bar eq-paused"></div>
+      <div class="eq-bar eq-paused"></div>
+    </div>
+    <p id="now-term" class="text-2xl font-bold mb-3"></p>
+    <p id="now-def" class="text-lg text-slate-300 opacity-20 transition-opacity duration-500"></p>
+  </div>
+
+  <div class="flex items-center justify-center gap-5 mb-8">
+    <button onclick="skip(-1)" class="btn-ripple w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:scale-110 transition"><i data-lucide="skip-back" class="w-5 h-5"></i></button>
+    <button id="play-btn" onclick="togglePlay()" class="btn-ripple w-16 h-16 rounded-full bg-gradient-to-r from-omnia-orange to-omnia-red shadow-glow flex items-center justify-center hover:scale-105 transition"><i id="play-icon" data-lucide="play" class="w-7 h-7 text-white"></i></button>
+    <button onclick="skip(1)" class="btn-ripple w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:scale-110 transition"><i data-lucide="skip-forward" class="w-5 h-5"></i></button>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <div class="flex items-center gap-1 glass rounded-full p-1">
+      <button onclick="setSpeed(0.8)" data-speed="0.8" class="speed-btn px-3 py-1.5 rounded-full text-xs font-bold transition">0.8×</button>
+      <button onclick="setSpeed(0.95)" data-speed="0.95" class="speed-btn px-3 py-1.5 rounded-full text-xs font-bold transition">1×</button>
+      <button onclick="setSpeed(1.3)" data-speed="1.3" class="speed-btn px-3 py-1.5 rounded-full text-xs font-bold transition">1.3×</button>
+    </div>
+    <button id="loop-btn" onclick="toggleLoop()" class="btn-ripple flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold glass border border-omnia-orange/40 text-omnia-orange transition"><i data-lucide="repeat" class="w-3.5 h-3.5"></i>Boucle</button>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DECK_ID = {{ deck.id }};
+const DECK_LANG = {{ deck.language | tojson }};
+let cards = [];
+let idx = 0;
+let isPlaying = false;
+let loopDeck = true;
+let speedRate = 0.95;
+let playGen = 0;
+const PAUSE_AFTER_TERM = 800;
+const PAUSE_AFTER_DEF = 1600;
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function init() {
+  const res = await fetch(`/api/decks/${DECK_ID}/cards.json`);
+  const data = await res.json();
+  cards = data.cards;
+  if (cards.length === 0) {
+    document.getElementById("empty-zone").classList.remove("hidden");
+    return;
+  }
+  document.getElementById("player-zone").classList.remove("hidden");
+  document.querySelector('.speed-btn[data-speed="0.95"]').classList.add("bg-omnia-orange/20", "text-omnia-orange");
+  renderCard();
+}
+
+function renderCard() {
+  const c = cards[idx];
+  document.getElementById("now-term").textContent = c.term;
+  document.getElementById("now-def").textContent = c.definition;
+  document.getElementById("now-def").classList.add("opacity-20");
+  document.getElementById("counter").textContent = `${idx + 1} / ${cards.length}`;
+  document.getElementById("progress-bar").style.width = `${Math.round((idx / cards.length) * 100)}%`;
+}
+
+function setEq(active) {
+  document.querySelectorAll("#eq .eq-bar").forEach((b) => b.classList.toggle("eq-paused", !active));
+}
+
+async function playLoop(gen) {
+  while (isPlaying && gen === playGen) {
+    const c = cards[idx];
+    setEq(true);
+    document.getElementById("now-def").classList.add("opacity-20");
+    await speakText(c.term, DECK_LANG, speedRate);
+    if (!isPlaying || gen !== playGen) break;
+    await sleep(PAUSE_AFTER_TERM);
+    if (!isPlaying || gen !== playGen) break;
+
+    document.getElementById("now-def").classList.remove("opacity-20");
+    await speakText(c.definition, DECK_LANG, speedRate);
+    setEq(false);
+    if (!isPlaying || gen !== playGen) break;
+    await sleep(PAUSE_AFTER_DEF);
+    if (!isPlaying || gen !== playGen) break;
+
+    idx++;
+    if (idx >= cards.length) {
+      if (loopDeck) { idx = 0; }
+      else { stopPlayback(); break; }
+    }
+    renderCard();
+  }
+  setEq(false);
+}
+
+function updatePlayButton() {
+  document.getElementById("play-icon").setAttribute("data-lucide", isPlaying ? "pause" : "play");
+  refreshIcons();
+}
+
+function togglePlay() {
+  if (isPlaying) {
+    isPlaying = false;
+    speechSynthesis.cancel();
+    setEq(false);
+  } else {
+    isPlaying = true;
+    playGen++;
+    playLoop(playGen);
+  }
+  updatePlayButton();
+}
+
+function stopPlayback() {
+  isPlaying = false;
+  speechSynthesis.cancel();
+  setEq(false);
+  updatePlayButton();
+}
+
+function skip(dir) {
+  speechSynthesis.cancel();
+  idx = (idx + dir + cards.length) % cards.length;
+  renderCard();
+  if (isPlaying) { playGen++; playLoop(playGen); }
+}
+
+function toggleLoop() {
+  loopDeck = !loopDeck;
+  document.getElementById("loop-btn").classList.toggle("text-omnia-orange", loopDeck);
+  document.getElementById("loop-btn").classList.toggle("border-omnia-orange/40", loopDeck);
+}
+
+function setSpeed(rate) {
+  speedRate = rate;
+  document.querySelectorAll(".speed-btn").forEach((b) => {
+    b.classList.toggle("bg-omnia-orange/20", parseFloat(b.dataset.speed) === rate);
+    b.classList.toggle("text-omnia-orange", parseFloat(b.dataset.speed) === rate);
+  });
+}
+
+window.addEventListener("beforeunload", () => speechSynthesis.cancel());
+
+init();
+</script>
+{% endblock %}

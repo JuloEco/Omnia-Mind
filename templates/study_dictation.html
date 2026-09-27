@@ -53,11 +53,13 @@
 {% block scripts %}
 <script>
 const DECK_ID = {{ deck.id }};
+const DECK_LANG = {{ deck.language | tojson }};
 let cards = [];
 let idx = 0;
 let correctCount = 0;
 let revealedCount = 1;
 let combo = 0;
+let requeueCounts = {};
 
 function updateCombo(isCorrect) {
   combo = isCorrect ? combo + 1 : 0;
@@ -107,13 +109,8 @@ function renderCard() {
 }
 
 function speakTerm() {
-  if (!("speechSynthesis" in window)) return;
   const c = cards[idx];
-  const utter = new SpeechSynthesisUtterance(c.term);
-  utter.lang = "fr-FR";
-  utter.rate = 0.95;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(utter);
+  speakText(c.term, DECK_LANG);
 }
 
 function revealHint() {
@@ -141,6 +138,8 @@ function checkAnswer(e) {
     feedback.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4 inline -mt-0.5"></i> La bonne réponse était : ${c.term}`;
     feedback.className = "mt-4 text-sm font-semibold h-5 text-rose-400";
     postJSON(`/api/cards/${c.id}/review`, { difficulty: "a_revoir" });
+    // Espacement massé : la carte ratée revient plus loin dans la même dictée.
+    requeueAfterMiss(cards, idx, c, requeueCounts, c.id);
   }
   refreshIcons();
 

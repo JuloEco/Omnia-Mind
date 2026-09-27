@@ -43,6 +43,7 @@ let idx = 0;
 let correctCount = 0;
 let answering = false;
 let combo = 0;
+let requeueCounts = {};
 
 function updateCombo(isCorrect) {
   combo = isCorrect ? combo + 1 : 0;
@@ -59,6 +60,13 @@ function updateCombo(isCorrect) {
   }
 }
 
+function addSegment(i) {
+  const seg = document.createElement("div");
+  seg.className = "h-1.5 flex-1 rounded-full bg-white/10";
+  seg.id = `seg-${i}`;
+  document.getElementById("segments").appendChild(seg);
+}
+
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
   return arr;
@@ -73,16 +81,10 @@ async function init() {
   questions = shuffle(cards.slice()).map((c) => {
     const distractors = shuffle(cards.filter(x => x.id !== c.id).map(x => x.definition)).slice(0, 3);
     const options = shuffle([c.definition, ...distractors]);
-    return { term: c.term, correct: c.definition, options, image_url: c.image_url };
+    return { cardId: c.id, term: c.term, correct: c.definition, options, image_url: c.image_url };
   });
 
-  const segWrap = document.getElementById("segments");
-  questions.forEach((_, i) => {
-    const seg = document.createElement("div");
-    seg.className = "h-1.5 flex-1 rounded-full bg-white/10";
-    seg.id = `seg-${i}`;
-    segWrap.appendChild(seg);
-  });
+  questions.forEach((_, i) => addSegment(i));
 
   document.getElementById("quiz-zone").classList.remove("hidden");
   renderQuestion();
@@ -120,6 +122,13 @@ function answer(opt, btn) {
   seg.className = `h-1.5 flex-1 rounded-full ${isCorrect ? "bg-emerald-400" : "bg-rose-500"}`;
   if (isCorrect) { correctCount++; document.getElementById("score-live").textContent = correctCount; }
   updateCombo(isCorrect);
+
+  // Espacement massé : une question ratée revient plus loin dans la MÊME
+  // session au lieu d'attendre la prochaine visite. Un nouveau segment de
+  // progression est ajouté pour représenter cette tentative supplémentaire.
+  if (!isCorrect && requeueAfterMiss(questions, idx, q, requeueCounts, q.cardId)) {
+    addSegment(questions.length - 1);
+  }
 
   setTimeout(() => {
     idx++;

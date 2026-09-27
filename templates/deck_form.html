@@ -45,10 +45,32 @@
       </div>
     </div>
     <div>
+      <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+        Langue (prononciation Dictée / Podcast)
+        <i data-lucide="info" class="w-3.5 h-3.5 text-slate-500" title="Choisis une langue si tes cartes sont toutes dans la même langue et que la voix se trompe. Laisse sur Auto si le deck mélange les langues (ex : mot anglais / définition en français)."></i>
+      </label>
+      <select name="language" class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5">
+        {% for code, label in languages %}
+        <option value="{{ code }}" {{ 'selected' if deck and deck.language == code or (not deck and code == 'auto') }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
       <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Tags</label>
       <input type="text" name="tags" value="{{ deck.tags if deck else '' }}"
              class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omnia-orange/60"
              placeholder="espagnol, verbes, b1 (séparés par des virgules)">
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-6">
+    <h2 class="font-bold mb-1 flex items-center gap-2"><i data-lucide="wand-sparkles" class="w-4 h-4 text-omnia-orange"></i>Coller un cours ou des notes (optionnel)</h2>
+    <p class="text-xs text-slate-400 mb-3">Colle un texte structuré — une paire par ligne (<code class="font-mono">Terme : définition</code>, <code class="font-mono">Terme - définition</code> ou <code class="font-mono">Terme — définition</code>) — et les cartes sont détectées et ajoutées automatiquement ci-dessous. Relis-les avant d'enregistrer : la détection n'est pas infaillible.</p>
+    <textarea id="smart-paste" rows="5" class="w-full text-sm rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-omnia-orange/60 mb-3"
+              placeholder="Photosynthèse : processus par lequel les plantes convertissent la lumière en énergie&#10;Mitochondrie - organite produisant l'énergie de la cellule"></textarea>
+    <div class="flex items-center gap-3">
+      <button type="button" onclick="smartPasteDetect()" class="btn-ripple flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-omnia-orange/15 text-omnia-orange border border-omnia-orange/25 hover:bg-omnia-orange/25 transition"><i data-lucide="wand-sparkles" class="w-4 h-4"></i>Détecter les paires</button>
+      <p id="smart-paste-result" class="text-xs text-slate-400"></p>
     </div>
   </div>
 
@@ -100,22 +122,57 @@
 {% endblock %}
 {% block scripts %}
 <script>
-function addCardRow() {
+function escapeAttr(s) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function addCardRow(term = "", definition = "") {
   const container = document.getElementById("card-rows");
   const row = document.createElement("div");
   row.className = "flex gap-2 items-start card-row";
   row.innerHTML = `
     <input type="hidden" name="card_id[]" value="">
-    <input type="text" name="term[]" placeholder="Terme" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
-    <input type="text" name="definition[]" placeholder="Définition" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+    <input type="text" name="term[]" value="${escapeAttr(term)}" placeholder="Terme" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
+    <input type="text" name="definition[]" value="${escapeAttr(definition)}" placeholder="Définition" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
     <input type="url" name="image_url[]" placeholder="Image (URL, optionnel)" class="w-40 shrink-0 rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm">
     <button type="button" onclick="this.closest('.card-row').remove()" class="p-2 text-slate-500 hover:text-omnia-red transition"><i data-lucide="x" class="w-4 h-4"></i></button>`;
   container.appendChild(row);
-  row.querySelector("input[name='term[]']").focus();
+  if (!term) row.querySelector("input[name='term[]']").focus();
   refreshIcons();
 }
 function removeCardPermanently(cardId, btn) {
   postJSON(`/cards/${cardId}/delete`).then(() => btn.closest('.card-row').remove());
+}
+
+/**
+ * Détection heuristique de paires terme/définition dans un texte collé
+ * en vrac (cours, notes...). Ne remplace pas un vrai NLP : gère les
+ * séparateurs les plus courants (":", "-", "—", tabulation) une ligne
+ * à la fois. Les lignes qui ne matchent aucun format sont ignorées.
+ */
+function smartPasteDetect() {
+  const raw = document.getElementById("smart-paste").value;
+  const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+  const SEPARATORS = [/^(.{1,80}?)\s*:\s+(.+)$/, /^(.{1,80}?)\s+[—–]\s+(.+)$/, /^(.{1,80}?)\s+-\s+(.+)$/, /^(.{1,80}?)\t+(.+)$/];
+  let added = 0;
+  for (let line of lines) {
+    // Retire une puce ou une numérotation de liste en tête de ligne
+    // ("- ", "• ", "1. ", "2) ") avant de chercher le séparateur terme/définition.
+    line = line.replace(/^(?:[-*•]|\d+[.)])\s+/, "");
+    for (const re of SEPARATORS) {
+      const m = line.match(re);
+      if (m) {
+        const term = m[1].trim();
+        const def = m[2].trim();
+        if (term && def) { addCardRow(term, def); added++; }
+        break;
+      }
+    }
+  }
+  const result = document.getElementById("smart-paste-result");
+  result.textContent = added > 0
+    ? `${added} carte${added > 1 ? "s" : ""} détectée${added > 1 ? "s" : ""} et ajoutée${added > 1 ? "s" : ""} ci-dessous — relis-les avant d'enregistrer.`
+    : "Aucune paire détectée. Essaie le format \"Terme : définition\", une ligne par carte.";
 }
 </script>
 {% endblock %}

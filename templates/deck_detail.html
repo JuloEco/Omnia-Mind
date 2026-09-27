@@ -49,6 +49,8 @@
     ('swipe', 'hand', 'Swipe rapide', 'Glisse à droite si tu maîtrises, à gauche sinon.'),
     ('quiz', 'list-checks', 'Quiz QCM', 'Questions à choix multiples chronométrées.'),
     ('dictee', 'headphones', 'Dictée audio', 'Écoute et orthographie le terme exact.'),
+    ('focus', 'target', 'Cartes fragiles', 'Entraînement ciblé sur les cartes que tu maîtrises le moins.'),
+    ('podcast', 'radio', 'Mode Podcast', 'Écoute le deck en boucle, mains libres, sans score.'),
   ] %}
   {% for mode, icon, label, desc in modes %}
   <a href="{{ url_for('study', deck_id=deck.id, mode=mode) }}" class="glass rounded-2xl p-5 hover:border-omnia-orange/40 hover:-translate-y-1 transition group stagger-item">
