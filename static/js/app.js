@@ -31,6 +31,87 @@ function fireConfetti(strength = 1) {
   setTimeout(() => confetti({ particleCount: 60 * strength, spread: 120, origin: { y: 0.5 }, colors }), 180);
 }
 
+/**
+ * Réinjecte une carte ratée plus loin dans la file de la session en cours
+ * (espacement massé) au lieu de la laisser disparaître jusqu'à la prochaine
+ * visite. Plafonné à 2 réinjections par carte pour ne jamais boucler
+ * indéfiniment sur une carte très difficile. `requeueMap` est un objet
+ * {clé: nombre de réinjections déjà faites} tenu par la page appelante.
+ */
+function requeueAfterMiss(queue, idx, item, requeueMap, key) {
+  const count = requeueMap[key] || 0;
+  if (count >= 2) return false;
+  requeueMap[key] = count + 1;
+  const gap = 5 + Math.floor(Math.random() * 3); // 5 à 7 cartes plus tard
+  const insertAt = Math.min(queue.length, idx + 1 + gap);
+  queue.splice(insertAt, 0, item);
+  return true;
+}
+
+// ------------------------------------------------------------------
+// Synthèse vocale multilingue. Le moteur TTS du navigateur lit dans la
+// langue qu'on lui donne explicitement (utter.lang) — sans ça, il utilise
+// la langue de l'interface pour tout, d'où "I don't mind" prononcé à la
+// française. On détecte la langue probable du texte (ou on force celle
+// choisie pour le deck) avant de parler.
+// ------------------------------------------------------------------
+const LANG_TAGS = { fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE", it: "it-IT" };
+
+// Mots-outils très fréquents par langue, entourés d'espaces pour éviter
+// les faux positifs sur des sous-chaînes ("est" dans "reste", etc.).
+const LANG_HINTS = {
+  en: [" the ", " and ", " is ", " you ", " don't ", " doesn't ", " i'm ", " it's ", " can't ", " with ", " that ", " this ", " what ", " who ", " how ", " are ", " your "],
+  fr: [" le ", " la ", " les ", " et ", " est ", " vous ", " ne ", " pas ", " avec ", " que ", " qui ", " quoi ", " comment ", " être ", " des ", " une ", " un "],
+  es: [" el ", " la ", " los ", " es ", " y ", " qué ", " cómo ", " porque ", " está ", " para ", " con "],
+  de: [" der ", " die ", " das ", " und ", " ist ", " nicht ", " mit ", " warum ", " für "],
+};
+
+function detectSpeechLang(text) {
+  const t = ` ${(text || "").toLowerCase()} `;
+  let best = "fr", bestScore = 0;
+  for (const [lang, hints] of Object.entries(LANG_HINTS)) {
+    let score = 0;
+    for (const h of hints) if (t.includes(h)) score++;
+    if (score > bestScore) { bestScore = score; best = lang; }
+  }
+  return best; // "fr" par défaut si aucun signal net (texte court, nom propre...)
+}
+
+function _loadVoices() {
+  return new Promise((resolve) => {
+    const existing = speechSynthesis.getVoices();
+    if (existing.length) { resolve(existing); return; }
+    speechSynthesis.onvoiceschanged = () => resolve(speechSynthesis.getVoices());
+    setTimeout(() => resolve(speechSynthesis.getVoices()), 500); // filet de sécurité
+  });
+}
+
+/**
+ * Lit un texte à voix haute avec le bon accent. `deckLang` est le réglage
+ * du deck ("auto", "fr", "en"...) : "auto" détecte automatiquement à
+ * partir du texte lui-même (utile pour un deck qui mélange les langues,
+ * comme un mot anglais associé à sa définition en français), sinon la
+ * langue choisie est forcée. Retourne une promesse résolue quand la
+ * lecture est terminée, pour pouvoir enchaîner plusieurs textes (Podcast).
+ */
+async function speakText(text, deckLang = "auto", rate = 0.95) {
+  if (!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  const lang = (deckLang && deckLang !== "auto") ? deckLang : detectSpeechLang(text);
+  const tag = LANG_TAGS[lang] || LANG_TAGS.fr;
+  const voices = await _loadVoices();
+  return new Promise((resolve) => {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = tag;
+    utter.rate = rate;
+    const voice = voices.find(v => v.lang === tag) || voices.find(v => v.lang.startsWith(tag.split("-")[0]));
+    if (voice) utter.voice = voice;
+    utter.onend = () => resolve();
+    utter.onerror = () => resolve();
+    speechSynthesis.speak(utter);
+  });
+}
+
 function csrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
   return meta ? meta.content : "";
