@@ -58,7 +58,7 @@ app.before_request(csrf_protect)
 CATEGORIES = ["Général", "Langues", "Sciences", "Histoire-Géo", "Maths", "Code & Informatique",
               "Droit & Économie", "Art & Culture", "Médecine", "Autre"]
 
-XP_TABLE = {"flashcards": 8, "match": 15, "swipe": 8, "quiz": 12, "dictee": 10}
+XP_TABLE = {"flashcards": 8, "match": 15, "swipe": 8, "quiz": 12, "dictee": 10, "focus": 10}
 
 # Limites de longueur appliquées côté serveur (les colonnes SQL ont les
 # mêmes bornes : ça évite un crash SQL type DataError sur un champ trop long).
@@ -79,6 +79,7 @@ def inject_globals():
         "octix_portal_url": OCTIX_PORTAL_URL,
         "current_user": current_user(),
         "categories": CATEGORIES,
+        "languages": LANGUAGES,
         "demo_enabled": DEMO_ENABLED,
         "demo_username": DEMO_USERNAME,
         "demo_password": DEMO_PASSWORD,
@@ -266,6 +267,15 @@ def _safe_category(raw):
     return raw if raw in CATEGORIES else "Général"
 
 
+LANGUAGES = [("auto", "Auto (détection par carte)"), ("fr", "Français"), ("en", "Anglais"),
+             ("es", "Espagnol"), ("de", "Allemand"), ("it", "Italien")]
+ALLOWED_LANGS = {code for code, _ in LANGUAGES}
+
+
+def _safe_lang(raw):
+    return raw if raw in ALLOWED_LANGS else "auto"
+
+
 def _parse_csv_cards(file_storage):
     """Parse un fichier CSV uploadé (colonnes term;definition ou
     term,definition, avec ou sans en-tête) et renvoie une liste de
@@ -308,6 +318,7 @@ def deck_new():
         tags=Deck.normalize_tags(request.form.get("tags", "")),
         is_public=bool(request.form.get("is_public")),
         cover_emoji=request.form.get("cover_emoji", "📚")[:4] or "📚",
+        language=_safe_lang(request.form.get("language", "auto")),
     )
     db.session.add(deck)
     db.session.flush()
@@ -393,6 +404,7 @@ def deck_edit(deck_id):
     deck.tags = Deck.normalize_tags(request.form.get("tags", deck.tags))
     deck.is_public = bool(request.form.get("is_public"))
     deck.cover_emoji = request.form.get("cover_emoji", deck.cover_emoji)[:4] or deck.cover_emoji
+    deck.language = _safe_lang(request.form.get("language", deck.language))
 
     # Cartes existantes (édition en place) — la suppression d'une carte passe
     # par l'endpoint AJAX dédié /cards/<id>/delete, pas par ce formulaire.
@@ -459,10 +471,12 @@ def study(deck_id, mode):
         return redirect(url_for("explore"))
     templates = {
         "flashcards": "study_flashcards.html",
+        "focus": "study_flashcards.html",
         "match": "study_match.html",
         "swipe": "study_swipe.html",
         "quiz": "study_quiz.html",
         "dictee": "study_dictation.html",
+        "podcast": "study_podcast.html",
     }
     tpl = templates.get(mode)
     if not tpl:
@@ -470,7 +484,7 @@ def study(deck_id, mode):
     if deck.card_count == 0:
         flash("Ajoute au moins une carte à ce deck avant de réviser.")
         return redirect(url_for("deck_detail", deck_id=deck_id))
-    return render_template(tpl, deck=deck)
+    return render_template(tpl, deck=deck, focus_mode=(mode == "focus"))
 
 
 # ----------------------------------------------------------------------
@@ -528,6 +542,44 @@ def api_srs_queue(deck_id):
             "retention": p.retention_pct if p else 0,
         })
     return jsonify(queue=payload, due_count=len(due), new_count=len(new))
+
+
+@app.route("/api/decks/<int:deck_id>/focus_queue")
+@login_required
+def api_focus_queue(deck_id):
+    """File ciblée sur les cartes fragiles de ce deck : celles déjà vues au
+    moins une fois qui ont un ease factor bas, un échec récent (lapse), ou
+    une rétention estimée basse. Contrairement à la file SRS classique,
+    elle ignore la date d'échéance : l'utilisateur demande explicitement à
+    s'entraîner sur ses points faibles maintenant, pas plus tard."""
+    u = current_user()
+    deck = _accessible_deck_or_none(deck_id, u)
+    if deck is None:
+        return jsonify(error="not_found"), 404
+
+    cards = deck.cards.all()
+    progresses = {
+        p.card_id: p for p in CardProgress.query.filter(
+            CardProgress.user_id == u.id, CardProgress.card_id.in_([c.id for c in cards])
+        )
+    }
+
+    fragile = []
+    for c in cards:
+        p = progresses.get(c.id)
+        if p is None or p.times_seen == 0:
+            continue  # jamais tentée : pas "fragile", juste pas encore vue
+        is_weak = p.ease_factor < 2.0 or p.lapses_in_a_row > 0 or p.retention_pct <= 60
+        if is_weak:
+            fragile.append((c, p))
+
+    fragile.sort(key=lambda cp: cp[1].ease_factor)  # les plus fragiles d'abord
+
+    payload = [{
+        "card_id": c.id, "term": c.term, "definition": c.definition,
+        "image_url": c.image_url or "", "status": p.status, "retention": p.retention_pct,
+    } for c, p in fragile]
+    return jsonify(queue=payload)
 
 
 @app.route("/api/cards/<int:card_id>/review", methods=["POST"])

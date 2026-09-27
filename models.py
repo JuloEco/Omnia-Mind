@@ -25,6 +25,14 @@ DIFFICULTY_EASY = "facile"
 DIFFICULTY_MEDIUM = "moyen"
 DIFFICULTY_HARD = "a_revoir"
 
+# Plafond de l'intervalle SRS, même pour une carte maîtrisée avec un ease
+# factor élevé. Sans ce plafond, une carte "facile" plusieurs fois de suite
+# peut voir son intervalle grimper à plusieurs mois voire années et ne
+# jamais redevenir "due" en pratique : la mémoire s'effondre en silence.
+# 90 jours force une "piqûre de rappel" de consolidation périodique, même
+# sur les cartes déjà maîtrisées.
+MAX_INTERVAL_DAYS = 90.0
+
 STATUS_NEW = "nouvelle"
 STATUS_LEARNING = "apprentissage"
 STATUS_REVIEW = "revision"
@@ -116,6 +124,10 @@ class Deck(db.Model):
     tags = db.Column(db.String(300), default="")  # liste de tags séparés par des virgules
     is_public = db.Column(db.Boolean, default=False, nullable=False)
     cover_emoji = db.Column(db.String(8), default="📚")
+    # Langue forcée pour la synthèse vocale (Dictée, Podcast) : "auto" pour
+    # une détection automatique par carte, ou un code fixe (fr/en/es/de/it)
+    # si tout le deck est dans une seule langue et que la détection se trompe.
+    language = db.Column(db.String(5), default="auto", nullable=False)
     share_token = db.Column(db.String(32), unique=True, index=True, default=_new_share_token)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -222,7 +234,7 @@ class CardProgress(db.Model):
             self.consecutive_easy = 0
             self.ease_factor = max(1.3, self.ease_factor - 0.02)
             base = self.interval_days if self.interval_days >= 1 else 1
-            self.interval_days = round(base * 1.35, 2)
+            self.interval_days = min(MAX_INTERVAL_DAYS, round(base * 1.35, 2))
             self.status = STATUS_REVIEW
         else:  # facile
             self.times_correct += 1
@@ -230,7 +242,7 @@ class CardProgress(db.Model):
             self.consecutive_easy += 1
             self.ease_factor = min(3.2, self.ease_factor + 0.15)
             base = self.interval_days if self.interval_days >= 1 else 1
-            self.interval_days = round(base * self.ease_factor, 2)
+            self.interval_days = min(MAX_INTERVAL_DAYS, round(base * self.ease_factor, 2))
             mastered = self.interval_days >= 21 and self.consecutive_easy >= 2
             self.status = STATUS_MASTERED if mastered else STATUS_REVIEW
 
@@ -336,7 +348,7 @@ class StudyLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("omniamind_users.id"), nullable=False)
     deck_id = db.Column(db.Integer, db.ForeignKey("omniamind_decks.id"), nullable=False)
-    mode = db.Column(db.String(20), nullable=False)  # flashcards | match | swipe | quiz | dictee
+    mode = db.Column(db.String(20), nullable=False)  # flashcards | match | swipe | quiz | dictee | focus
     score = db.Column(db.Float, default=0)  # % pour quiz/swipe, secondes pour match
     xp_gained = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

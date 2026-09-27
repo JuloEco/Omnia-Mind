@@ -1,9 +1,23 @@
 # 🧠 OmniaMind
 
 Plateforme d'apprentissage communautaire type Quizlet — decks, 6 modes de
-révision (Flashcards 3D, SRS, Match, Swipe, Dictée, Quiz QCM), XP, séries de
-jours, heatmap d'activité. Fait partie de l'écosystème **Octix**, dans la
-branche **Omnia**.
+révision (Flashcards 3D avec SRS, Match, Swipe, Quiz QCM, Dictée, Cartes
+fragiles), XP, séries de jours, heatmap d'activité, succès à débloquer.
+Fait partie de l'écosystème **Octix**, dans la branche **Omnia**.
+
+### Renforcement de la rétention (ajouté après le passage initial)
+- **Espacement massé en session** : une carte/question ratée n'attend pas le
+  lendemain — elle revient 5 à 7 cartes plus loin dans la *même* session
+  (Flashcards, Quiz, Swipe, Dictée), plafonné à 2 réinjections par carte.
+- **Rappel actif écrit** en Flashcards : un champ facultatif pour taper sa
+  réponse avant de retourner la carte (effet de génération), comparée à la
+  définition réelle une fois la carte retournée.
+- **Mode "Cartes fragiles"** (`focus`) : session ciblée sur les cartes déjà
+  vues qui ont un ease factor bas, un échec récent ou une rétention estimée
+  faible — sans attendre leur échéance SRS.
+- **Plafond d'intervalle SRS** (`MAX_INTERVAL_DAYS = 90` dans `models.py`) :
+  même une carte maîtrisée revient au moins tous les ~3 mois pour une
+  piqûre de rappel, plutôt que de voir son intervalle croître sans limite.
 
 ## 🔐 Authentification — pas de Flask-Login
 
